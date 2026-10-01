@@ -13,6 +13,7 @@ if (!defined('ABSPATH')) {
 
 const IOS_SOCIAL_SHARE_VERSION = '1.3';
 const IOS_SOCIAL_SHARE_OPTION = 'ios_social_share_version';
+const IOS_SOCIAL_SHARE_NETWORKS_OPTION = 'ios_social_share_networks';
 const IOS_SOCIAL_SHARE_COOKIE = 'ios_social_visitor';
 
 function ios_social_share_get_counts_table() {
@@ -59,6 +60,115 @@ function ios_social_share_install() {
 }
 
 register_activation_hook(__FILE__, 'ios_social_share_install');
+
+
+function ios_social_share_get_enabled_networks() {
+    $defaults = [
+        'vk' => true,
+        'telegram' => true,
+        'max' => true,
+        'ok' => true,
+        'whatsapp' => true,
+    ];
+
+    $saved = get_option(IOS_SOCIAL_SHARE_NETWORKS_OPTION, []);
+
+    if (!is_array($saved)) {
+        return $defaults;
+    }
+
+    return array_merge($defaults, array_intersect_key($saved, $defaults));
+}
+
+function ios_social_share_register_settings() {
+    register_setting(
+        'ios_social_share_settings',
+        IOS_SOCIAL_SHARE_NETWORKS_OPTION,
+        [
+            'type' => 'array',
+            'sanitize_callback' => function ($value) {
+                $allowed = ['vk', 'telegram', 'max', 'ok', 'whatsapp'];
+                $result = [];
+
+                foreach ($allowed as $network) {
+                    $result[$network] = !empty($value[$network]);
+                }
+
+                return $result;
+            },
+            'default' => [
+                'vk' => true,
+                'telegram' => true,
+                'max' => true,
+                'ok' => true,
+                'whatsapp' => true,
+            ],
+        ]
+    );
+}
+add_action('admin_init', 'ios_social_share_register_settings');
+
+function ios_social_share_add_settings_page() {
+    add_options_page(
+        'iPhone Social Share',
+        'iPhone Social Share',
+        'manage_options',
+        'ios-social-share',
+        'ios_social_share_settings_page'
+    );
+}
+add_action('admin_menu', 'ios_social_share_add_settings_page');
+
+function ios_social_share_settings_page() {
+    if (!current_user_can('manage_options')) {
+        return;
+    }
+
+    $networks = [
+        'vk' => 'VK',
+        'telegram' => 'Telegram',
+        'max' => 'MAX',
+        'ok' => 'Одноклассники',
+        'whatsapp' => 'WhatsApp',
+    ];
+
+    $enabled = ios_social_share_get_enabled_networks();
+    ?>
+    <div class="wrap">
+        <h1>iPhone Social Share</h1>
+
+        <p>Выберите кнопки, которые будут отображаться на сайте.</p>
+
+        <form method="post" action="options.php">
+            <?php settings_fields('ios_social_share_settings'); ?>
+
+            <table class="form-table" role="presentation">
+                <tbody>
+                    <?php foreach ($networks as $key => $name): ?>
+                        <tr>
+                            <th scope="row"><?php echo esc_html($name); ?></th>
+                            <td>
+                                <label>
+                                    <input
+                                        type="checkbox"
+                                        name="<?php echo esc_attr(IOS_SOCIAL_SHARE_NETWORKS_OPTION); ?>[<?php echo esc_attr($key); ?>]"
+                                        value="1"
+                                        <?php checked(!empty($enabled[$key])); ?>
+                                    >
+                                    Показывать кнопку
+                                </label>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+
+            <?php submit_button(); ?>
+        </form>
+    </div>
+    <?php
+}
+
 
 add_action('plugins_loaded', function () {
     if (get_option(IOS_SOCIAL_SHARE_OPTION) !== IOS_SOCIAL_SHARE_VERSION) {
@@ -186,6 +296,13 @@ function ios_social_share_html() {
             'icon' => $icon_base . 'whatsapp.svg',
         ],
     ];
+
+    $enabled_networks = ios_social_share_get_enabled_networks();
+    $networks = array_intersect_key($networks, array_filter($enabled_networks));
+
+    if (empty($networks)) {
+        return '';
+    }
 
     ob_start();
     ?>
