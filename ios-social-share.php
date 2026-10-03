@@ -2,7 +2,7 @@
 /*
 Plugin Name: iPhone Social Share Buttons
 Description: Легкие кнопки VK, Telegram, MAX, Одноклассники и WhatsApp в стиле iPhone с уникальным счетчиком нажатий.
-Version: 1.3
+Version: 1.4
 Author: Evgeny Fed
 License: GPL-2.0-or-later
 */
@@ -11,7 +11,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-const IOS_SOCIAL_SHARE_VERSION = '1.3';
+const IOS_SOCIAL_SHARE_VERSION = '1.4';
 const IOS_SOCIAL_SHARE_OPTION = 'ios_social_share_version';
 const IOS_SOCIAL_SHARE_NETWORKS_OPTION = 'ios_social_share_networks';
 const IOS_SOCIAL_SHARE_COOKIE = 'ios_social_visitor';
@@ -119,6 +119,105 @@ function ios_social_share_add_settings_page() {
 }
 add_action('admin_menu', 'ios_social_share_add_settings_page');
 
+
+function ios_social_share_render_stats() {
+    global $wpdb;
+
+    $counts_table = ios_social_share_get_counts_table();
+    $posts_table = $wpdb->posts;
+    $per_page = 50;
+    $page = isset($_GET['ios_share_page']) ? max(1, absint($_GET['ios_share_page'])) : 1;
+    $offset = ($page - 1) * $per_page;
+
+    $total_posts = (int) $wpdb->get_var(
+        "SELECT COUNT(DISTINCT c.post_id)
+         FROM {$counts_table} c
+         INNER JOIN {$posts_table} p ON p.ID = c.post_id
+         WHERE p.post_status = 'publish'"
+    );
+
+    $rows = $wpdb->get_results(
+        $wpdb->prepare(
+            "SELECT
+                c.post_id,
+                p.post_title,
+                SUM(CASE WHEN c.network = 'vk' THEN c.unique_count ELSE 0 END) AS vk,
+                SUM(CASE WHEN c.network = 'telegram' THEN c.unique_count ELSE 0 END) AS telegram,
+                SUM(CASE WHEN c.network = 'max' THEN c.unique_count ELSE 0 END) AS max_count,
+                SUM(CASE WHEN c.network = 'ok' THEN c.unique_count ELSE 0 END) AS ok,
+                SUM(CASE WHEN c.network = 'whatsapp' THEN c.unique_count ELSE 0 END) AS whatsapp,
+                SUM(c.unique_count) AS total
+             FROM {$counts_table} c
+             INNER JOIN {$posts_table} p ON p.ID = c.post_id
+             WHERE p.post_status = 'publish'
+             GROUP BY c.post_id, p.post_title
+             ORDER BY total DESC, c.post_id DESC
+             LIMIT %d OFFSET %d",
+            $per_page,
+            $offset
+        ),
+        ARRAY_A
+    );
+
+    if (empty($rows)) {
+        echo '<p>Пока нет кликов.</p>';
+        return;
+    }
+
+    echo '<div class="ios-social-share-stats">';
+    echo '<table class="widefat striped">';
+    echo '<thead><tr>';
+    echo '<th>Статья</th>';
+    echo '<th>VK</th>';
+    echo '<th>ТГ</th>';
+    echo '<th>MAX</th>';
+    echo '<th>OK</th>';
+    echo '<th>WA</th>';
+    echo '<th>Всего</th>';
+    echo '</tr></thead><tbody>';
+
+    foreach ($rows as $row) {
+        $title = $row['post_title'] !== '' ? $row['post_title'] : '(без названия)';
+        $edit_url = get_edit_post_link((int) $row['post_id']);
+        $display_title = wp_trim_words(wp_strip_all_tags($title), 12, '…');
+
+        echo '<tr>';
+        echo '<td>';
+        if ($edit_url) {
+            echo '<a href="' . esc_url($edit_url) . '">' . esc_html($display_title) . '</a>';
+        } else {
+            echo esc_html($display_title);
+        }
+        echo '</td>';
+        echo '<td>' . (int) $row['vk'] . '</td>';
+        echo '<td>' . (int) $row['telegram'] . '</td>';
+        echo '<td>' . (int) $row['max_count'] . '</td>';
+        echo '<td>' . (int) $row['ok'] . '</td>';
+        echo '<td>' . (int) $row['whatsapp'] . '</td>';
+        echo '<td><strong>' . (int) $row['total'] . '</strong></td>';
+        echo '</tr>';
+    }
+
+    echo '</tbody></table>';
+    echo '</div>';
+
+    $total_pages = max(1, (int) ceil($total_posts / $per_page));
+
+    if ($total_pages > 1) {
+        $base_url = admin_url('options-general.php?page=ios-social-share');
+        echo '<div class="tablenav"><div class="tablenav-pages">';
+        echo paginate_links([
+            'base' => add_query_arg('ios_share_page', '%#%', $base_url),
+            'format' => '',
+            'current' => $page,
+            'total' => $total_pages,
+            'prev_text' => '‹',
+            'next_text' => '›',
+        ]);
+        echo '</div></div>';
+    }
+}
+
 function ios_social_share_settings_page() {
     if (!current_user_can('manage_options')) {
         return;
@@ -165,6 +264,32 @@ function ios_social_share_settings_page() {
 
             <?php submit_button(); ?>
         </form>
+
+        <hr>
+
+        <style>
+            .ios-social-share-stats table {
+                max-width: 900px;
+            }
+            .ios-social-share-stats th,
+            .ios-social-share-stats td {
+                padding: 6px 10px;
+                white-space: nowrap;
+            }
+            .ios-social-share-stats th:first-child,
+            .ios-social-share-stats td:first-child {
+                width: 100%;
+                white-space: normal;
+            }
+            .ios-social-share-stats + .tablenav {
+                max-width: 900px;
+            }
+        </style>
+
+        <h2>Статистика кликов</h2>
+        <p>Учитываются уникальные клики по каждой статье и социальной сети.</p>
+
+        <?php ios_social_share_render_stats(); ?>
     </div>
     <?php
 }
@@ -274,26 +399,36 @@ function ios_social_share_html() {
             'name' => 'VK',
             'background' => '#0077FF',
             'icon' => $icon_base . 'vk.svg',
+            'icon_size' => '28px',
+            'filter' => 'none',
         ],
         'telegram' => [
             'name' => 'Telegram',
             'background' => '#229ED9',
             'icon' => $icon_base . 'telegram.svg',
+            'icon_size' => '26px',
+            'filter' => 'none',
         ],
         'max' => [
             'name' => 'MAX',
             'background' => 'linear-gradient(135deg, #00BFFF 0%, #471AFF 48%, #9500FF 100%)',
             'icon' => $icon_base . 'max-logo.svg',
+            'icon_size' => '24px',
+            'filter' => 'none',
         ],
         'ok' => [
             'name' => 'Одноклассники',
             'background' => '#EE8208',
             'icon' => $icon_base . 'odnoklassniki.svg',
+            'icon_size' => '24px',
+            'filter' => 'brightness(0) invert(1)',
         ],
         'whatsapp' => [
             'name' => 'WhatsApp',
             'background' => '#25D366',
             'icon' => $icon_base . 'whatsapp.svg',
+            'icon_size' => '28px',
+            'filter' => 'none',
         ],
     ];
 
@@ -303,6 +438,14 @@ function ios_social_share_html() {
     if (empty($networks)) {
         return '';
     }
+
+    $share_urls = [
+        'vk' => 'https://vk.com/share.php?url=' . "' + encodeURIComponent(pageUrl) + '" . '&title=' . "' + encodeURIComponent(pageTitle)",
+        'telegram' => 'https://t.me/share/url?url=' . "' + encodeURIComponent(pageUrl) + '" . '&text=' . "' + encodeURIComponent(pageTitle)",
+        'max' => 'https://max.ru/:share?text=' . "' + encodeURIComponent(pageTitle + ' ' + pageUrl)",
+        'ok' => 'https://connect.ok.ru/offer?url=' . "' + encodeURIComponent(pageUrl) + '" . '&title=' . "' + encodeURIComponent(pageTitle)",
+        'whatsapp' => 'https://wa.me/?text=' . "' + encodeURIComponent(pageTitle + ' ' + pageUrl)",
+    ];
 
     ob_start();
     ?>
@@ -337,7 +480,7 @@ function ios_social_share_html() {
                     style="background: <?php echo esc_attr($network['background']); ?>;"
                 >
                     <img
-                        src="<?php echo esc_url($network['icon']); ?>?v=1.3"
+                        src="<?php echo esc_url($network['icon']); ?>?v=<?php echo esc_attr(IOS_SOCIAL_SHARE_VERSION); ?>"
                         alt=""
                         width="50"
                         height="50"
@@ -387,33 +530,15 @@ function ios_social_share_html() {
             width: 24px;
             height: 24px;
             object-fit: contain;
-            filter: brightness(0) invert(1);
         }
 
-        .ios-social-share__item[data-network="max"] .ios-social-share__icon {
-            background: linear-gradient(135deg, #00BFFF 0%, #471AFF 48%, #9500FF 100%) !important;
-            border-radius: 10px;
+<?php foreach ($networks as $key => $network): ?>
+        .ios-social-share__item[data-network="<?php echo esc_attr($key); ?>"] .ios-social-share__icon img {
+            width: <?php echo esc_attr($network['icon_size']); ?>;
+            height: <?php echo esc_attr($network['icon_size']); ?>;
+            filter: <?php echo esc_attr($network['filter']); ?>;
         }
-        .ios-social-share__item[data-network="vk"] .ios-social-share__icon img {
-            width: 28px;
-            height: 28px;
-            filter: none;
-        }
-        .ios-social-share__item[data-network="telegram"] .ios-social-share__icon img {
-            width: 26px;
-            height: 26px;
-            filter: none;
-        }
-        .ios-social-share__item[data-network="max"] .ios-social-share__icon img {
-            width: 24px;
-            height: 24px;
-            filter: none;
-        }
-        .ios-social-share__item[data-network="whatsapp"] .ios-social-share__icon img {
-            width: 28px;
-            height: 28px;
-            filter: none;
-        }
+<?php endforeach; ?>
 
         .ios-social-share__badge {
             position: absolute;
@@ -468,11 +593,10 @@ function ios_social_share_html() {
             const pageTitle = document.title;
 
             const shareUrls = {
-                vk: 'https://vk.com/share.php?url=' + encodeURIComponent(pageUrl) + '&title=' + encodeURIComponent(pageTitle),
-                telegram: 'https://t.me/share/url?url=' + encodeURIComponent(pageUrl) + '&text=' + encodeURIComponent(pageTitle),
-                max: 'https://max.ru/:share?text=' + encodeURIComponent(pageTitle + ' ' + pageUrl),
-                ok: 'https://connect.ok.ru/offer?url=' + encodeURIComponent(pageUrl) + '&title=' + encodeURIComponent(pageTitle),
-                whatsapp: 'https://wa.me/?text=' + encodeURIComponent(pageTitle + ' ' + pageUrl)
+<?php foreach ($networks as $key => $network): ?>
+                <?php echo esc_js($key); ?>: '<?php echo esc_js($share_urls[$key]); ?>'<?php echo $key === array_key_last($networks) ? '' : ','; ?>
+
+<?php endforeach; ?>
             };
 
             wrapper.querySelectorAll('.ios-social-share__item').forEach(function (button) {
