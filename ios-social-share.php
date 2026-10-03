@@ -440,11 +440,11 @@ function ios_social_share_html() {
     }
 
     $share_urls = [
-        'vk' => 'https://vk.com/share.php?url=' . "' + encodeURIComponent(pageUrl) + '" . '&title=' . "' + encodeURIComponent(pageTitle)",
-        'telegram' => 'https://t.me/share/url?url=' . "' + encodeURIComponent(pageUrl) + '" . '&text=' . "' + encodeURIComponent(pageTitle)",
-        'max' => 'https://max.ru/:share?text=' . "' + encodeURIComponent(pageTitle + ' ' + pageUrl)",
-        'ok' => 'https://connect.ok.ru/offer?url=' . "' + encodeURIComponent(pageUrl) + '" . '&title=' . "' + encodeURIComponent(pageTitle)",
-        'whatsapp' => 'https://wa.me/?text=' . "' + encodeURIComponent(pageTitle + ' ' + pageUrl)",
+        'vk' => "'https://vk.com/share.php?url=' + encodeURIComponent(pageUrl) + '&title=' + encodeURIComponent(pageTitle)",
+        'telegram' => "'https://t.me/share/url?url=' + encodeURIComponent(pageUrl) + '&text=' + encodeURIComponent(pageTitle)",
+        'max' => "'https://max.ru/:share?text=' + encodeURIComponent(pageTitle + ' ' + pageUrl)",
+        'ok' => "'https://connect.ok.ru/offer?url=' + encodeURIComponent(pageUrl) + '&title=' + encodeURIComponent(pageTitle)",
+        'whatsapp' => "'https://wa.me/?text=' + encodeURIComponent(pageTitle + ' ' + pageUrl)",
     ];
 
     ob_start();
@@ -594,7 +594,7 @@ function ios_social_share_html() {
 
             const shareUrls = {
 <?php foreach ($networks as $key => $network): ?>
-                <?php echo esc_js($key); ?>: '<?php echo esc_js($share_urls[$key]); ?>'<?php echo $key === array_key_last($networks) ? '' : ','; ?>
+                <?php echo esc_js($key); ?>: <?php echo $share_urls[$key]; ?><?php echo $key === array_key_last($networks) ? '' : ','; ?>
 
 <?php endforeach; ?>
             };
